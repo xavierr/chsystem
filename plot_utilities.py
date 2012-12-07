@@ -1,6 +1,4 @@
 
-# script which generates pictures for article
-
 # Debugging module
 import ipdb
 
@@ -12,100 +10,100 @@ from io import *
 import os
 from subprocess import call
 
-# ipdb.set_trace()
-
-matplotlib.rcParams['lines.linewidth'] = 2
-
 def addToFile(string_arg):
     file = FileIO("param_input.txt", 'a')
     file.write(string_arg)
     file.close()
     
 
+# Class which contains computation settings
+# Explanations of parameters  are given in __init__ function below.
 class CondInit:
-    def __init__(self, rho0 = 0., rho0_x = 2.0, times = list(), time_end = 2., dt = 0.1,
-                 abs_err = 1e-6, rel_err = 1e-6, N = 200, R = 20.0, lower_bound = 1e-3, is_relabeling = 1, gamma = 1, xi = list()):
+    def __init__(self, rho0 = 0., times = list(), time_end = 2., dt = 0.1,
+                 N = 200, R = 20.0,  is_relabeling = "true"):
         self.rho0 = rho0
-        self.rho0_x = rho0_x
-        self.gamma = gamma
-        self.times = times
-        self.time_end = time_end
-        self.dt = dt
-        self.abs_err = abs_err
-        self.rel_err = rel_err
-        self.N = N
-        self.R = R
-        self.dxi = 2*R/N
-        self.lower_bound = lower_bound
-        self.is_relabeling = is_relabeling
-        self.xi = xi
+        self.times = times # times for which the solution is saved (typically dt is much smaller than intervals of this variable)
+        self.time_end = time_end # end time of simulation
+        self.dt = dt # time step size
+        self.N = N # Number of point for the spatial discretization
+        self.R = R # [-R, R] is the interval (in space) in which the solution is computed
+        self.dxi = 2*R/N # space step size
+        self.is_relabeling = is_relabeling # flag, true -> relabeling is done for each time in times. Otherwise, no relabeling
 
-    def writeToFile(self, init = "peakon"):
+        self.xi = linspace(-R_arg, R_arg, N_arg)
+
+    def writeToFile(self):
+        # Routine which writes the parameters to file which we will be read in  c++ program.
         file = FileIO("param_input.txt", 'w')
-        file.write("init = \"" + init + "\";\n")
         file.write("N = " + str(int(self.N)) + ";\n")
         file.write("R = " + str(self.R) + ";\n")
-        file.write("lower_bound = " + str(self.lower_bound) + ";\n")
         file.write("time_end = " + str(self.time_end) + ";\n")
         file.write("dt = " + str(self.dt) + ";\n")
-        file.write("rho0 = " + str(self.rho0) + ";\n")
-        file.write("rho0_x = " + str(self.rho0_x) + ";\n")
-        file.write("gamma = " + str(self.gamma) + ";\n")
         file.write("time = [")
         for t in self.times[0:-1]:
             file.write(str(t) + ", ")
         file.write(str(self.times[-1]) + "];\n")
-        file.write("abs_err = " + str(self.abs_err) + ";\n")
-        file.write("rel_err = " + str(self.rel_err) + ";\n")
-        file.write("is_relabeling = " + str(self.is_relabeling) + ";\n")
+        file.write("is_relabeling = " + self.is_relabeling + ";\n")
+        file.write("rho0 = " + str(self.rho0) + ";\n")
         file.close()
 
 
-p1 = 1.0
+# Parameters for the current computation
+
+# Parameters for "antipeakon" case
+p1 = 1.0 
 p2 = -1.0
 q1 = -1.0
 q2 = 1.0
+
+# Parameter for "peakon" case
 c = 1.0
+
+# Parameters for "cubic" and "cubic2" case
+gamma = 0.1
 x0 = 1.0
 umax = 1.0
+
+# Parameter for "cubic2" case
+rho0_x = 1.0
+
+# Parameters common for all cases
 R_arg = 10.0
-col_time = 1.783
-time_end_arg = 5.0
+time_end_arg = 0.4
 dt_arg = 0.01
-N_arg = 2000
-number_relabeling = 30
-lower_bound_arg = 1.0e-4
-is_relabeling_arg = 0
-rho0_arg = 0.01
-rho0_x_arg = 1.0
-gamma_arg = 0.1
-
-
-cond_init = CondInit(rho0 = rho0_arg, rho0_x = rho0_x_arg, times = linspace(0.0, time_end_arg, number_relabeling), time_end = time_end_arg, dt = dt_arg,
-                     abs_err = 1e-9, rel_err = 1e-9, N = N_arg, R = R_arg, lower_bound = lower_bound_arg, is_relabeling = is_relabeling_arg,
-                     xi = linspace(-R_arg, R_arg, N_arg), gamma = gamma_arg)
-
-
-
+N_arg = 200
+number_relabeling = 20
+is_relabeling_arg = "false"
+rho0_arg = 0.0
 init = "cubic2"
 # init = "cubic"
 # init = "antipeakon"
 # init = "peakon"
 
+
+cond_init = CondInit(rho0 = rho0_arg, times = linspace(0.0, time_end_arg, number_relabeling), time_end = time_end_arg, dt = dt_arg, N = N_arg, R = R_arg, is_relabeling = is_relabeling_arg)
+cond_init.writeToFile()
+
+addToFile("init = \"" + init + "\";\n")
+addToFile("p1 = " + str(p1) + ";\n")
+addToFile("p2 = " + str(p2) + ";\n")
+addToFile("q1 = " + str(q1) + ";\n")
+addToFile("q2 = " + str(q2) + ";\n")
+addToFile("c = " + str(c) + ";\n")
+addToFile("x0 = " + str(x0) + ";\n")
+addToFile("umax = " + str(umax) + ";\n")
+addToFile("gamma = " + str(gamma) + ";\n") 
+addToFile("rho0_x = " + str(rho0_x) + ";\n") 
+
+
+
 def plot_result(cond_init_arg, save_fig = False, sol_computed = False, with_dots = True):
 
-    cond_init_arg.writeToFile(init)
-    addToFile("p1 = " + str(p1) + ";\n")
-    addToFile("p2 = " + str(p2) + ";\n")
-    addToFile("q1 = " + str(q1) + ";\n")
-    addToFile("q2 = " + str(q2) + ";\n")
-    addToFile("c = " + str(c) + ";\n")
-    addToFile("x0 = " + str(x0) + ";\n")
-    addToFile("umax = " + str(umax) + ";\n")
+    # utility which plots results of computations as a movie (y, U, H, etc...)
 
     if not(sol_computed):
         print "Start Computation"
-        call("./a.out")
+        call("./run.out")
         print "Computation done"
         
     y = fromfile("y.txt", sep=",");
@@ -119,8 +117,6 @@ def plot_result(cond_init_arg, save_fig = False, sol_computed = False, with_dots
     M = fromfile("M.txt", sep=",");
     param = fromfile("param.txt", sep=",");
 
-    # rho_max = amax(r/q)
-    # ener_dens_max = amax(h/q - (r/q)**2)
     U_max = amax(U)
     rho_max = amax(r/q)
     R = param[0]
@@ -203,19 +199,13 @@ def plot_result(cond_init_arg, save_fig = False, sol_computed = False, with_dots
         plt.draw()
         time.sleep(0.01)
             
-def plot_charac(cond_init_arg, file_name = False,  sol_computed = False):
-    cond_init_arg.writeToFile(init)
-    addToFile("p1 = " + str(p1) + ";\n")
-    addToFile("p2 = " + str(p2) + ";\n")
-    addToFile("q1 = " + str(q1) + ";\n")
-    addToFile("q2 = " + str(q2) + ";\n")
-    addToFile("c = " + str(c) + ";\n")
-    addToFile("x0 = " + str(x0) + ";\n")
-    addToFile("umax = " + str(umax) + ";\n")
+def plot_charac(cond_init_arg, save_fig = False, file_name = "charac.png",  sol_computed = False, xic = [-10, 0, 10]):
+
+    # utility to plot charachteristics.
 
     if not(sol_computed):
         print "debut calcul"
-        call("./a.out")
+        call("./run.out")
         print "fin calcul"
         
     y = fromfile("y.txt", sep=",");
@@ -230,28 +220,29 @@ def plot_charac(cond_init_arg, file_name = False,  sol_computed = False):
     N = cond_init_arg.N
     R = cond_init_arg.R
 
-    xii = empty_like(cond_init_arg.xi)
-    for i, xic in enumerate(cond_init_arg.xi):
-        xii[i] = round((xic + R)/cond_init_arg.dxi)
+    ind_xic = empty_like(xic)
+    for i, xici in enumerate(xic):
+        ind_xic[i] = round((xici + R)/cond_init_arg.dxi)
     
     plt.ion() # interactive mode for matplotlib
     
     plt.figure(5)
     plt.clf()
-    # for ind_xii in xii:
-    for ind_xii in arange(N+1):
+    for ind_xii in ind_xic:
         yt = empty_like(t)
         for ind_tt in enumerate(t):
             yt[ind_tt[0]] = y[ind_xii + ind_tt[0]*(N + 1)] 
         plt.plot(yt, t)
     plt.axis([cond_init_arg.xi[0], cond_init_arg.xi[-1], 0.0, t[-1]])
-    if file_name:
+    if save_fig:
         plt.savefig(file_name)
 
 def plot_comp_result(save_fig = False,  
                      with_dots = False,
                      create_movie = False,
                      save_fig_directory = "Computations"):
+
+    # utility which plots different results of computations.
 
     class Datas:
         def __init__(self, directory = "S1"):

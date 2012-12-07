@@ -1,3 +1,6 @@
+
+# plot the figure in article 
+
 import matplotlib.pyplot as plt
 import matplotlib
 from numpy import *

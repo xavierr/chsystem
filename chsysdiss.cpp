@@ -111,11 +111,11 @@ namespace {
   //   }
   // }
 
-  double yPlusHXi(double y, double U, double H,
-  		  double q, double w, double h,
-  		  double r) {
-    return q + h;
-  }
+  // double yPlusHXi(double y, double U, double H,
+  // 		  double q, double w, double h,
+  // 		  double r) {
+  //   return q + h;
+  // }
 
 
 
@@ -140,7 +140,7 @@ namespace {
   			 const double * u,
   			 std::vector<double>::const_iterator phi_begin, 
   			 std::vector<double>::const_iterator phi_end,  
-  			 std::vector<double>::iterator u_phi_begin, 
+  			 double*  u_phi, 
   			 bool is_u_derivative, 
   			 bool is_u_equal_y = false)  {
     if (phi_begin < phi_end) {
@@ -148,12 +148,12 @@ namespace {
   	// We are outside the scope of phi. 
   	if (is_u_equal_y) { 
   	  // extrapolate with line of slope one.
-  	  *u_phi_begin = *u + (*phi_begin - *xi_begin);
+  	  *u_phi = *u + (*phi_begin - *xi_begin);
   	} else {
   	  // extrapolate with horizontal line.
-  	  *u_phi_begin = *u;
+  	  *u_phi = *u;
   	}
-  	interpolateVector(xi_begin, xi_end, u, phi_begin + 1, phi_end, u_phi_begin + 1, is_u_derivative, is_u_equal_y);
+  	interpolateVector(xi_begin, xi_end, u, phi_begin + 1, phi_end, u_phi + 1, is_u_derivative, is_u_equal_y);
       } else {
   	while ((xi_begin + 1 < xi_end) && (*phi_begin >= *(xi_begin + 1))) {
   	  ++xi_begin;
@@ -161,21 +161,21 @@ namespace {
   	}
   	if (xi_begin + 1 < xi_end ) {
   	  if (is_u_derivative) {
-  	    *u_phi_begin = *u;
+  	    *u_phi = *u;
   	  } else {
-  	    *u_phi_begin = interpolate(*xi_begin, *(xi_begin + 1),
-  				       *u, *(u + 1),
-  				       *phi_begin);
+  	    *u_phi = interpolate(*xi_begin, *(xi_begin + 1),
+				 *u, *(u + 1),
+				 *phi_begin);
   	  }
-  	  interpolateVector(xi_begin, xi_end, u, phi_begin + 1, phi_end, u_phi_begin + 1, is_u_derivative, is_u_equal_y);
+  	  interpolateVector(xi_begin, xi_end, u, phi_begin + 1, phi_end, u_phi + 1, is_u_derivative, is_u_equal_y);
   	} else {
   	  // We are outside the scope of phi. We extrapolate as above.
   	  if (is_u_equal_y) {
-  	    *u_phi_begin = *u + (*phi_begin - *xi_begin);
+  	    *u_phi = *u + (*phi_begin - *xi_begin);
   	  } else {
-  	    *u_phi_begin = *u;
+  	    *u_phi = *u;
   	  }
-  	  interpolateVector(xi_begin, xi_end, u, phi_begin + 1, phi_end, u_phi_begin + 1, is_u_derivative, is_u_equal_y);
+  	  interpolateVector(xi_begin, xi_end, u, phi_begin + 1, phi_end, u_phi + 1, is_u_derivative, is_u_equal_y);
   	}
       }
     } else {
@@ -184,26 +184,33 @@ namespace {
   };
 
   void relabelingAndCopy(const std::vector<double>& xi,
-  			 const std::vector<double>& new_xi,
-  			 const std::vector<double>& g,
-  			 double* u, 
-  			 const bool is_u_derivative, const bool is_u_equal_y = false) 
+  			 double* u,
+  			 const std::vector<double>& g_inv,
+			 std::vector<double>& new_u, const bool is_u_equal_y = false) 
   {
-    double N = xi.size();
-    std::vector<double> g_inv(N);
-    std::vector<double> new_u(N);
-    interpolateVector(g.begin(), g.end(),
-  		      &xi[0], 
-  		      new_xi.begin(), new_xi.end(),  
-  		      g_inv.begin(), 
-  		      false, true);
-    // writeVectorToFile("g_inv.txt", g_inv);
     interpolateVector(xi.begin(), xi.end(),
   		      u, 
   		      g_inv.begin(), g_inv.end(),  
-  		      new_u.begin(), 
-  		      is_u_derivative, is_u_equal_y);
+  		      &new_u[0], 
+  		      false, is_u_equal_y);
     std::copy(new_u.begin(), new_u.end(), u);
+  };
+
+  void relabelingAndCopyDer(const std::vector<double>& xi,
+			    double* q,
+			    const std::vector<double>& g_inv,
+			    const std::vector<double>& g_xi,
+			    std::vector<double>& new_q) 
+  {
+
+    const int N = xi.size();
+    std::transform(q, q + N, g_xi.begin(), new_q.begin(), divide);  
+
+    interpolateVector(xi.begin(), xi.end(),
+  		      &new_q[0], 
+  		      g_inv.begin(), g_inv.end(),  
+  		      q, 
+		      true, false);
   };
 
 
@@ -253,14 +260,15 @@ bool Simulation::checkIfCollided(double y1, double U1, double H1, double q1, dou
   }
 }
 
-Simulation::Simulation() {
+Simulation::Simulation()  {
+
   libconfig::Config cfg;
-  
   cfg.readFile("param_input.txt");
-  
   R = cfg.lookup("R");
   N = cfg.lookup("N");
-  lower_bound = cfg.lookup("lower_bound");
+  time_end = cfg.lookup("time_end");
+  dt = cfg.lookup("dt");
+
   libconfig::Setting& time_setting = cfg.lookup("time");
   int size_time = time_setting.getLength();
   time.resize(size_time);
@@ -268,26 +276,20 @@ Simulation::Simulation() {
     time[i] = time_setting[i];
   }
   dxi = 2*R/N;
-  xi.resize(N+1);
+  xi.resize(N + 1);
   for (int i = 0; i < N+1; ++i) {
     xi[i] = -R + i*dxi;
   }
   new_xi.resize(N + 1);
   track.resize(N + 1);
   old_track.resize(N + 1);
-  new_y.resize(N + 1);
-  new_U.resize(N + 1);
-  new_H.resize(N + 1);
   g.resize(N + 1);
   g_inv.resize(N + 1);
-  // new_qm1.resize(N + 1);  
-  // new_w.resize(N + 1);
-  // new_h.resize(N + 1);
-  // new_r.resize(N + 1);
   g_xi.resize(N + 1);
   diss.resize(N + 1);
   P.resize(N + 1);
   Q.resize(N + 1);
+  local_var1.resize(N + 1);
   Z.resize(7*(N + 1));
   resetPointers(Z);
 }
@@ -399,57 +401,55 @@ void Simulation::relabelingAndCopyAll(){
   double new_dxi = generateXi(g[0], g[N], N, new_xi);
 
   interpolateVector(g.begin(), g.end(),
-		    &xi[0], 
-		    new_xi.begin(), new_xi.end(),  
-		    g_inv.begin(), 
-		    false, true);
+  		    &xi[0], 
+  		    new_xi.begin(), new_xi.end(),  
+  		    &g_inv[0], 
+  		    false, true);
 
-  // writeVectorToFile("g_inv.txt", g_inv);
-  // std::copy(new_xi.begin(), new_xi.end(), xi.begin());
+  relabelingAndCopy(xi, y, g_inv, local_var1, true);
+  relabelingAndCopy(xi, U, g_inv, local_var1, false);
+  relabelingAndCopy(xi, H, g_inv, local_var1, true);
 
-  y[0] = xi[0];
-  U[0] = 0.0;
-  H[0] = 0.0;
+
+  relabelingAndCopyDer(xi, q, g_inv, g_xi, local_var1);
+  relabelingAndCopyDer(xi, w, g_inv, g_xi, local_var1);
+  relabelingAndCopyDer(xi, h, g_inv, g_xi, local_var1);
+
+  std::copy(new_xi.begin(), new_xi.end(), xi.begin());
   
-  for (int i = 0; i < N; ++i) {
-    y[i + 1] = y[i] + dxi*q[i];
-    U[i + 1] = U[i] + dxi*w[i];
-    H[i + 1] = H[i] + dxi*h[i];
-  }
-  
-  interpolateVector(xi.begin(), xi.end(),
-		    &y[0], 
-		    g_inv.begin(), g_inv.end(),  
-		    new_y.begin(), 
-		    false, true);
-  interpolateVector(xi.begin(), xi.end(),
-		    &U[0], 
-		    g_inv.begin(), g_inv.end(),  
-		    new_U.begin(), 
-		    false, false);
-  interpolateVector(xi.begin(), xi.end(),
-		    &H[0], 
-		    g_inv.begin(), g_inv.end(),  
-		    new_H.begin(), 
-		    false, false);
-  std::copy(new_y.begin(), new_y.end(), &y[0]);
-  std::copy(new_U.begin(), new_U.end(), &U[0]);
-  std::copy(new_H.begin(), new_H.end(), &H[0]);
-
   dxi = new_dxi;
-  for (int i = 0; i < N; ++i) {
-    q[i] = 1.0/dxi*(y[i + 1] - y[i]);
-    w[i] = 1.0/dxi*(U[i + 1] - U[i]);
-    h[i] = 1.0/dxi*(H[i + 1] - H[i]);
-  }
-  q[N] = 0.;
-  w[N] = 0.;
-  h[N] = 0.;
-  
+
   setTrack();
   setDiss();
 
 }
+
+void Simulation::solve() {
+
+  typedef boost::numeric::odeint::runge_kutta_dopri5< state_type > stepper_type;
+  stepper_type stepper = boost::numeric::odeint::runge_kutta_dopri5< state_type >();
+  double t = 0;
+  solution.push_back(Z);
+  solution_diss.push_back(diss);
+  solution_time.push_back(0.0);
+  for (std::vector<double>::const_iterator time_it = time.begin(); time_it < time.end() - 1; ++time_it) {
+    while (t <= time_it[1]) {
+      resetPointers(Z);
+      integrate_const(stepper, *this, Z, t, t + dt, dt);
+      removeEnergy();
+      t += dt;
+    }
+    resetPointers(Z);
+    // fixYandH();
+    if (is_relabeling) {
+      relabelingAndCopyAll();
+    } 
+    
+    solution.push_back(Z);
+    solution_diss.push_back(diss);
+    solution_time.push_back(*time_it);
+  }
+}    
   
 void Simulation::operator() (const state_type& ZZ, state_type& dZdt, const double /* t */ ) {
 
@@ -480,60 +480,16 @@ void Simulation::operator() (const state_type& ZZ, state_type& dZdt, const doubl
 
 void Simulation::computeG() {
 
-  class Add {
-  public:
-    double operator()(double a, double b) {
-      return a + b;};
-  };
-
-  resetPointers(Z);
-
-  std::transform(q, q + N + 1, h, &g_xi[0], Add());
+  std::transform(q, q + N + 1, h, g_xi.begin(), [](double a, double b) {
+      return a + b;
+    });
 
   int ind0 = ceil((N - 1)/2);
   integrateDer(&g[0], &g_xi[0], dxi, ind0, 0.0, N);
 
-  // std::transform(y, y + N + 1, H, &g[0], [](double a, double b) {
-  //     return a + b;
-  //   });
-
 }
 
 
-void Simulation::solve() {
-  using namespace boost::numeric::odeint;
-  libconfig::Config cfg;
-  cfg.readFile("param_input.txt");
-  const double time_end = cfg.lookup("time_end");
-  const double dt = cfg.lookup("dt");
-  const double abs_err = cfg.lookup("abs_err");
-  const double rel_err = cfg.lookup("rel_err");
-  std::vector<double> relab_der(N + 1);
-
-  typedef boost::numeric::odeint::runge_kutta_dopri5< state_type > stepper_type;
-  stepper_type stepper = boost::numeric::odeint::runge_kutta_dopri5< state_type >();
-  double t = 0;
-  solution.push_back(Z);
-  solution_diss.push_back(diss);
-  solution_time.push_back(0.0);
-  for (std::vector<double>::const_iterator time_it = time.begin(); time_it < time.end() - 1; ++time_it) {
-    while (t <= time_it[1]) {
-      resetPointers(Z);
-      integrate_const(stepper, *this, Z, t, t + dt, dt);
-      removeEnergy();
-      t += dt;
-    }
-    resetPointers(Z);
-    // fixYandH();
-    if (is_relabeling == 1) {
-      relabelingAndCopyAll();
-    } 
-    
-    solution.push_back(Z);
-    solution_diss.push_back(diss);
-    solution_time.push_back(*time_it);
-  }
-}    
 
 void Simulation::computePandQ() {
 
@@ -622,7 +578,7 @@ void Simulation::init() {
   }
   diss.assign(N + 1, false);
   collision_limiter = 0.0;
-  if (is_relabeling == 1) {
+  if (is_relabeling) {
     relabelingAndCopyAll();
   } else {
     setTrack();
@@ -646,7 +602,6 @@ void Simulation::removeEnergy() {
   resetPointers(Z);
   std::copy(track.begin(), track.end(), old_track.begin());
   setTrack();
-  // setDiss();
 
   bool need_set_track = false;
   for (int i = 0; i < N + 1; ++i) {
@@ -663,16 +618,7 @@ void Simulation::removeEnergy() {
   }
   if (need_set_track) {
     setTrack();
-    // setDiss();
   }
-  // y[0] = xi[0];
-  // U[0] = 0.0;
-  // H[0] = 0.0;
-  // for (int i = 0; i < N; ++i) {
-  //   y[i + 1] = y[i] + dxi*q[i];
-  //   U[i + 1] = U[i] + dxi*w[i];
-  //   H[i + 1] = H[i] + dxi*h[i];
-  // }
 }
 
 int main() {
