@@ -453,8 +453,8 @@ void Simulation::solve() {
   
 void Simulation::operator() (const state_type& ZZ, state_type& dZdt, const double /* t */ ) {
 
-  std::vector<double> PP(N);
-  std::vector<double> QQ(N);
+  std::vector<double> PP(N + 1);
+  std::vector<double> QQ(N + 1);
 
   const double* yy = &ZZ[0*(N + 1)];
   const double* UU = &ZZ[1*(N + 1)];
@@ -469,7 +469,7 @@ void Simulation::operator() (const state_type& ZZ, state_type& dZdt, const doubl
 		 diss, 
 		 PP, QQ, dxi, N);
 	       
-  computeDerivative(yy, UU, HH,
+  ::computeDerivative(yy, UU, HH,
 		    qq, ww, hh, rr,
 		    diss,
 		    PP, QQ, 
